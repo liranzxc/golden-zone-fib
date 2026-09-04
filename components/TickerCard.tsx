@@ -16,6 +16,9 @@ export default function TickerCard({ setup, bars }: { setup: Setup; bars: Bar[] 
           <div className="flex items-center gap-2">
             <span className="text-lg font-semibold">{setup.ticker}</span>
             <span className="text-xs text-gray-500">{setup.anchor}</span>
+            <span className="rounded bg-white/10 px-1.5 py-0.5 text-xs font-medium text-gray-300">
+              {setup.timeframe.toUpperCase()}
+            </span>
           </div>
           <div className="text-sm text-gray-400">${setup.price.toFixed(2)}</div>
         </div>

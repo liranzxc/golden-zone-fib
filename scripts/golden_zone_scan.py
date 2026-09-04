@@ -71,7 +71,8 @@ SB_RENAME = {"e21>e50": "e21_gt_e50", ">e200": "gt_e200",
 
 # ══════════════════════════ supabase ══════════════════════════
 
-def push_supabase(df: "pd.DataFrame", bars: dict, bars_keep: int = 180) -> None:
+def push_supabase(df: "pd.DataFrame", bars: dict, bars_keep: int = 180,
+                  timeframe: str = "1d") -> None:
     """Upsert the setup rows + a trailing window of OHLCV bars for every
     ticker that appears in `df`. Needs SUPABASE_URL and SUPABASE_SECRET_KEY
     (the service-role key — RLS blocks the anon key from writing)."""
@@ -85,14 +86,21 @@ def push_supabase(df: "pd.DataFrame", bars: dict, bars_keep: int = 180) -> None:
     key = os.environ["SUPABASE_SECRET_KEY"]
     sb = create_client(url, key)
 
+    # Prune setups older than 7 days
+    from datetime import date, timedelta
+    cutoff = str(date.today() - timedelta(days=7))
+    sb.table("setups").delete().lt("date", cutoff).execute()
+    print(f"  supabase: deleted setups before {cutoff}", file=sys.stderr)
+
     setups = df.drop(columns=[c for c in df.columns if c.startswith("_")])
     setups = setups.rename(columns=SB_RENAME)
     setups["date"] = setups["date"].astype(str)
+    setups["timeframe"] = timeframe
     rows = setups.to_dict(orient="records")
     for k in range(0, len(rows), 500):
         sb.table("setups").upsert(rows[k:k + 500],
-                                   on_conflict="ticker,anchor,date").execute()
-    print(f"  supabase: upserted {len(rows)} setup rows", file=sys.stderr)
+                                   on_conflict="ticker,anchor,date,timeframe").execute()
+    print(f"  supabase: upserted {len(rows)} setup rows [{timeframe}]", file=sys.stderr)
 
     tickers = sorted(setups["ticker"].unique())
     bar_rows = []
@@ -102,8 +110,12 @@ def push_supabase(df: "pd.DataFrame", bars: dict, bars_keep: int = 180) -> None:
             continue
         tail = d.tail(bars_keep)
         for idx, r in tail.iterrows():
+            date_str = (idx.strftime("%Y-%m-%dT%H:%M")
+                        if timeframe != "1d" else str(idx.date()))
             bar_rows.append({
-                "ticker": t, "date": str(idx.date()),
+                "ticker": t,
+                "date": date_str,
+                "timeframe": timeframe,
                 "open": round(float(r["Open"]), 4),
                 "high": round(float(r["High"]), 4),
                 "low": round(float(r["Low"]), 4),
@@ -112,9 +124,9 @@ def push_supabase(df: "pd.DataFrame", bars: dict, bars_keep: int = 180) -> None:
             })
     for k in range(0, len(bar_rows), 1000):
         sb.table("bars").upsert(bar_rows[k:k + 1000],
-                                 on_conflict="ticker,date").execute()
+                                 on_conflict="ticker,date,timeframe").execute()
     print(f"  supabase: upserted {len(bar_rows)} bar rows "
-          f"({len(tickers)} tickers)", file=sys.stderr)
+          f"({len(tickers)} tickers) [{timeframe}]", file=sys.stderr)
 
 
 # ══════════════════════════ tickers ══════════════════════════
@@ -175,6 +187,34 @@ def download(tickers: list[str], period: str, chunk: int = 100
                 if getattr(d.index, "tz", None) is not None:
                     d.index = d.index.tz_localize(None)
                 out[t] = d
+        time.sleep(0.5)
+    return out
+
+
+def download_4h(tickers: list[str], chunk: int = 50) -> dict[str, pd.DataFrame]:
+    """Download 1h bars (2y lookback) and resample to 4h OHLCV."""
+    import yfinance as yf
+    out: dict[str, pd.DataFrame] = {}
+    for k in range(0, len(tickers), chunk):
+        batch = tickers[k:k + chunk]
+        print(f"  4h bars {k + 1}-{k + len(batch)} of {len(tickers)}", file=sys.stderr)
+        data = yf.download(batch, period="2y", interval="1h", auto_adjust=False,
+                           group_by="ticker", progress=False, threads=True)
+        for t in batch:
+            try:
+                d = data[t] if isinstance(data.columns, pd.MultiIndex) else data
+            except KeyError:
+                continue
+            d = d.dropna(subset=["Close"]).copy()
+            d.index = pd.to_datetime(d.index)
+            if getattr(d.index, "tz", None) is not None:
+                d.index = d.index.tz_localize(None)
+            d4 = d.resample("4h", offset="30min").agg(
+                {"Open": "first", "High": "max", "Low": "min",
+                 "Close": "last", "Volume": "sum"}
+            ).dropna(subset=["Close"])
+            if len(d4) >= 260:
+                out[t] = d4
         time.sleep(0.5)
     return out
 
@@ -377,81 +417,92 @@ def main() -> int:
                         "pip install supabase)")
     p.add_argument("--bars-keep", type=int, default=180,
                    help="trailing daily bars to upsert per ticker, for charting")
+    p.add_argument("--timeframe", choices=["1d", "4h", "both"], default="1d",
+                   help="which timeframe(s) to scan and push")
     a = p.parse_args()
 
     anchors = ["fixed", "pine"] if a.anchor == "both" else [a.anchor]
+    timeframes = ["1d", "4h"] if a.timeframe == "both" else [a.timeframe]
 
     tickers = sp500_tickers()
     if a.limit:
         tickers = tickers[:a.limit]
     print(f"anchor={'+'.join(anchors)} zone={a.zone[0]:.3f}-{a.zone[1]:.3f} "
-          f"tfs={a.tfs}", file=sys.stderr)
+          f"tfs={a.tfs} timeframe={a.timeframe}", file=sys.stderr)
 
-    bars = download(tickers, a.period)          # one fetch, reused by both anchors
+    for tf in timeframes:
+        print(f"\n{'═'*20} timeframe={tf} {'═'*20}", file=sys.stderr)
 
-    rows = []
-    for t, d in bars.items():
-        if float(d["Close"].iloc[-1]) < a.min_price:
-            continue
-        if "Volume" in d and float((d["Close"] * d["Volume"]).tail(20).mean()) < a.min_dollar_vol:
-            continue
-        for anc in anchors:
-            try:
-                r = setup(d, a, anc)
-            except Exception as e:                              # noqa: BLE001
-                print(f"  {t} [{anc}]: {type(e).__name__}: {e}", file=sys.stderr)
+        if tf == "1d":
+            bars = download(tickers, a.period)
+        else:
+            bars = download_4h(tickers)
+
+        rows = []
+        for t, d in bars.items():
+            if float(d["Close"].iloc[-1]) < a.min_price:
                 continue
-            if r:
-                r["ticker"] = t
-                r["_pass"] = passes(r, a)
-                rows.append(r)
+            if "Volume" in d and float((d["Close"] * d["Volume"]).tail(20).mean()) < a.min_dollar_vol:
+                continue
+            for anc in anchors:
+                try:
+                    r = setup(d, a, anc)
+                except Exception as e:                              # noqa: BLE001
+                    print(f"  {t} [{anc}]: {type(e).__name__}: {e}", file=sys.stderr)
+                    continue
+                if r:
+                    r["ticker"] = t
+                    r["_pass"] = passes(r, a)
+                    rows.append(r)
 
-    if not rows:
-        print("no usable data", file=sys.stderr)
-        return 1
+        if not rows:
+            print(f"no usable data [{tf}]", file=sys.stderr)
+            continue
 
-    df = pd.DataFrame(rows)
-    cols = ["ticker"] + [c for c in df.columns if c != "ticker" and not c.startswith("_")]
+        df = pd.DataFrame(rows)
+        cols = ["ticker"] + [c for c in df.columns if c != "ticker" and not c.startswith("_")]
 
-    with pd.option_context("display.width", 260, "display.max_columns", 60):
-        for anc in anchors:
-            sub = df[df["anchor"] == anc]
-            hits = sub[sub["_pass"]].sort_values(["score", "_dist", "rr_to_high"],
-                                                 ascending=[False, True, False])
-            print(f"\n═══ anchor={anc} ═══", file=sys.stderr)
-            if len(hits):
-                print(hits[cols].to_string(index=False))
-                print(f"{len(hits)} setups", file=sys.stderr)
-            else:
-                print(f"no setups in the zone today [{anc}]", file=sys.stderr)
-            if a.all:
-                near = sub[~sub["_pass"] & sub["_in_zone"]].sort_values("_dist")
-                if len(near):
-                    print(f"\n--- in zone, filtered out [{anc}] ---")
-                    print(near[cols].head(25).to_string(index=False))
+        with pd.option_context("display.width", 260, "display.max_columns", 60):
+            for anc in anchors:
+                sub = df[df["anchor"] == anc]
+                hits = sub[sub["_pass"]].sort_values(["score", "_dist", "rr_to_high"],
+                                                     ascending=[False, True, False])
+                print(f"\n═══ anchor={anc} [{tf}] ═══", file=sys.stderr)
+                if len(hits):
+                    print(hits[cols].to_string(index=False))
+                    print(f"{len(hits)} setups", file=sys.stderr)
+                else:
+                    print(f"no setups in the zone today [{anc}] [{tf}]", file=sys.stderr)
+                if a.all:
+                    near = sub[~sub["_pass"] & sub["_in_zone"]].sort_values("_dist")
+                    if len(near):
+                        print(f"\n--- in zone, filtered out [{anc}] [{tf}] ---")
+                        print(near[cols].head(25).to_string(index=False))
 
-        if len(anchors) > 1:
-            wide = df.pivot_table(index="ticker", columns="anchor",
-                                  values=["retrace", "leg_high", "leg_low"],
-                                  aggfunc="first")
-            disagree = df.pivot_table(index="ticker", columns="anchor",
-                                      values="_pass", aggfunc="first")
-            disagree = disagree[disagree["fixed"] != disagree["pine"]]
-            if len(disagree):
-                print("\n--- anchors disagree on the pass ---")
-                print(wide.loc[disagree.index].to_string())
+            if len(anchors) > 1:
+                wide = df.pivot_table(index="ticker", columns="anchor",
+                                      values=["retrace", "leg_high", "leg_low"],
+                                      aggfunc="first")
+                disagree = df.pivot_table(index="ticker", columns="anchor",
+                                          values="_pass", aggfunc="first")
+                disagree = disagree[disagree["fixed"] != disagree["pine"]]
+                if len(disagree):
+                    print("\n--- anchors disagree on the pass ---")
+                    print(wide.loc[disagree.index].to_string())
 
-    out = df[df["_in_zone"]] if a.all else df[df["_pass"]]
-    out = out.copy()
-    out["pass"] = out["_pass"]
-    out = out.sort_values(["anchor", "score", "_dist"], ascending=[True, False, True])
+        out = df[df["_in_zone"]] if a.all else df[df["_pass"]]
+        out = out.copy()
+        out["pass"] = out["_pass"]
+        out = out.sort_values(["anchor", "score", "_dist"], ascending=[True, False, True])
 
-    if a.out:
-        out[cols + ["pass"]].to_csv(a.out, index=False)
-        print(f"wrote {a.out} ({len(out)} rows)", file=sys.stderr)
+        if a.out:
+            path = a.out.replace(".csv", f"_{tf}.csv") if a.timeframe == "both" else a.out
+            out[cols + ["pass"]].to_csv(path, index=False)
+            print(f"wrote {path} ({len(out)} rows)", file=sys.stderr)
 
-    if a.supabase:
-        push_supabase(out[cols + ["pass"]], bars, bars_keep=a.bars_keep)
+        if a.supabase:
+            push_supabase(out[cols + ["pass"]], bars, bars_keep=a.bars_keep, timeframe=tf)
+
     return 0
 
 

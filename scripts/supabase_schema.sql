@@ -65,3 +65,14 @@ create policy "public read bars"   on bars   for select using (true);
 
 -- Writes only via the service-role key (used by the cron script), so no
 -- insert/update policy is needed for anon.
+
+-- Migration: add timeframe support (run in Supabase SQL editor)
+ALTER TABLE setups ADD COLUMN IF NOT EXISTS timeframe text NOT NULL DEFAULT '1d';
+ALTER TABLE setups DROP CONSTRAINT IF EXISTS setups_ticker_anchor_date_key;
+ALTER TABLE setups ADD CONSTRAINT setups_ticker_anchor_date_timeframe_key
+  UNIQUE (ticker, anchor, date, timeframe);
+
+ALTER TABLE bars DROP CONSTRAINT IF EXISTS bars_pkey;
+ALTER TABLE bars ALTER COLUMN date TYPE text USING date::text;
+ALTER TABLE bars ADD COLUMN IF NOT EXISTS timeframe text NOT NULL DEFAULT '1d';
+ALTER TABLE bars ADD PRIMARY KEY (ticker, date, timeframe);

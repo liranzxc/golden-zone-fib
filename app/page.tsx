@@ -11,16 +11,17 @@ interface PageProps {
 }
 
 function parseFilters(sp: PageProps["searchParams"]): Filters {
+  const timeframe = (sp.timeframe as string) ?? "both";
   const align = sp.align ? (Array.isArray(sp.align) ? sp.align : [sp.align]) : [];
   const zoneLo = sp.zoneLo ? Number(sp.zoneLo) : 0;
   const zoneHi = sp.zoneHi ? Number(sp.zoneHi) : 100;
-  return { anchor: "both", align, zoneLo, zoneHi };
+  return { anchor: "both", timeframe, align, zoneLo, zoneHi };
 }
 
 export default async function DashboardPage({ searchParams }: PageProps) {
   const filters = parseFilters(searchParams);
   const setups = await fetchSetups(filters);
-  const barsByTicker = await fetchBars(setups.map((s) => s.ticker));
+  const barsByKey = await fetchBars(setups.map((s) => s.ticker));
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -43,9 +44,9 @@ export default async function DashboardPage({ searchParams }: PageProps) {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {setups.map((s) => (
                 <TickerCard
-                  key={`${s.ticker}-${s.anchor}`}
+                  key={`${s.ticker}-${s.anchor}-${s.timeframe}`}
                   setup={s}
-                  bars={barsByTicker[s.ticker] ?? []}
+                  bars={barsByKey[`${s.ticker}:${s.timeframe}`] ?? []}
                 />
               ))}
             </div>

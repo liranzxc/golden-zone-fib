@@ -1,25 +1,56 @@
-name: Daily scan
+name: Market scans
 
 on:
+  workflow_dispatch:   # manual trigger from GitHub UI
+
   schedule:
-    - cron: "0 22 * * 1-5"   # 10pm UTC = ~6pm ET, weekdays after market close
-  workflow_dispatch:           # manual trigger from GitHub UI
+    # Daily scan (1D timeframe) — weekdays at 10pm UTC (~6pm ET, after close)
+    - cron: "0 22 * * 1-5"
+    # 4H scan — every 4h during market hours Mon–Fri
+    # Runs at 13:30, 17:30, 21:30 UTC = 9:30am, 1:30pm, 5:30pm ET
+    - cron: "30 13 * * 1-5"
+    - cron: "30 17 * * 1-5"
+    - cron: "30 21 * * 1-5"
 
 jobs:
-  scan:
+  daily:
+    name: Daily 1D scan
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' &&
+       (github.event.schedule == '0 22 * * 1-5'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
+      - name: Run 1D scan
+        run: python scripts/golden_zone_scan.py --supabase --timeframe 1d
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
 
-      - name: Run scan and push to Supabase
-        run: python scripts/golden_zone_scan.py --supabase
+  intraday:
+    name: Intraday 4H scan
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' &&
+       (github.event.schedule == '30 13 * * 1-5' ||
+        github.event.schedule == '30 17 * * 1-5' ||
+        github.event.schedule == '30 21 * * 1-5'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+      - name: Run 4H scan
+        run: python scripts/golden_zone_scan.py --supabase --timeframe 4h
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

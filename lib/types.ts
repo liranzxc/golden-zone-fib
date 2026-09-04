@@ -5,6 +5,7 @@ export interface Setup {
   id: number;
   ticker: string;
   anchor: Anchor;
+  timeframe: string;
   date: string;
   price: number;
   leg_low: number;
@@ -35,6 +36,7 @@ export interface Setup {
 export interface Bar {
   ticker: string;
   date: string;
+  timeframe: string;
   open: number;
   high: number;
   low: number;
@@ -44,6 +46,7 @@ export interface Bar {
 
 export interface Filters {
   anchor: Anchor | "both";
+  timeframe: string; // "1d" | "4h" | "both"
   align: string[]; // subset of ["4/4","3/4","2/4"]
   zoneLo: number;
   zoneHi: number;

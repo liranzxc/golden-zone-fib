@@ -9,12 +9,18 @@ const ZONE_PRESETS: { label: string; lo: number; hi: number }[] = [
   { label: "50 – 61.8",  lo: 50,   hi: 61.8 },
   { label: "61.8 – 78.6", lo: 61.8, hi: 78.6 },
 ];
+const TIMEFRAMES = [
+  { label: "Both", value: "both" },
+  { label: "1D",   value: "1d" },
+  { label: "4H",   value: "4h" },
+];
 
 export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
 
+  const timeframe = params.get("timeframe") ?? "both";
   const align = params.getAll("align");
   const zoneLo = Number(params.get("zoneLo") ?? 0);
   const zoneHi = Number(params.get("zoneHi") ?? 100);
@@ -38,6 +44,27 @@ export default function Sidebar() {
 
   return (
     <aside className="w-64 shrink-0 border-r border-border bg-panel px-4 py-6">
+      <div className="mb-6">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+          Timeframe
+        </h3>
+        <div className="flex flex-col gap-1">
+          {TIMEFRAMES.map((tf) => (
+            <button
+              key={tf.value}
+              onClick={() => update({ timeframe: tf.value === "both" ? null : tf.value })}
+              className={`rounded px-3 py-1.5 text-left text-sm ${
+                timeframe === tf.value
+                  ? "bg-accent/20 text-accent"
+                  : "text-gray-300 hover:bg-white/5"
+              }`}
+            >
+              {tf.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="mb-6">
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
           Grade

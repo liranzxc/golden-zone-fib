@@ -20,6 +20,7 @@ export async function fetchSetups(filters: Filters): Promise<Setup[]> {
   let q = supabase.from("setups").select("*").eq("date", date).eq("pass", true);
 
   if (filters.anchor !== "both") q = q.eq("anchor", filters.anchor);
+  if (filters.timeframe !== "both") q = q.eq("timeframe", filters.timeframe);
   if (filters.align.length) q = q.in("align", filters.align);
   q = q.gte("retrace", filters.zoneLo).lte("retrace", filters.zoneHi);
 
@@ -28,8 +29,10 @@ export async function fetchSetups(filters: Filters): Promise<Setup[]> {
   return (data ?? []) as Setup[];
 }
 
-/** Trailing OHLCV bars for a set of tickers, oldest first per ticker. */
-export async function fetchBars(tickers: string[]): Promise<Record<string, Bar[]>> {
+/** Trailing OHLCV bars for a set of tickers, keyed by "ticker:timeframe". */
+export async function fetchBars(
+  tickers: string[]
+): Promise<Record<string, Bar[]>> {
   if (!tickers.length) return {};
 
   const PAGE = 1000;
@@ -42,6 +45,7 @@ export async function fetchBars(tickers: string[]): Promise<Record<string, Bar[]
       .select("*")
       .in("ticker", tickers)
       .order("ticker")
+      .order("timeframe")
       .order("date", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw error;
@@ -51,9 +55,10 @@ export async function fetchBars(tickers: string[]): Promise<Record<string, Bar[]
     from += PAGE;
   }
 
-  const byTicker: Record<string, Bar[]> = {};
+  const byKey: Record<string, Bar[]> = {};
   for (const row of all) {
-    (byTicker[row.ticker] ??= []).push(row);
+    const key = `${row.ticker}:${row.timeframe}`;
+    (byKey[key] ??= []).push(row);
   }
-  return byTicker;
+  return byKey;
 }
