@@ -1,0 +1,25 @@
+name: Daily scan
+
+on:
+  schedule:
+    - cron: "0 22 * * 1-5"   # 10pm UTC = ~6pm ET, weekdays after market close
+  workflow_dispatch:           # manual trigger from GitHub UI
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run scan and push to Supabase
+        run: python scripts/golden_zone_scan.py --supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
