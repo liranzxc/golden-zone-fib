@@ -4,13 +4,21 @@ on:
   workflow_dispatch:   # manual trigger from GitHub UI
 
   schedule:
-    # Daily scan (1D timeframe) — weekdays at 10pm UTC (~6pm ET, after close)
+    # Daily 1D scan — weekdays 10pm UTC (6pm ET, after close)
     - cron: "0 22 * * 1-5"
-    # 4H scan — every 4h during market hours Mon–Fri
-    # Runs at 13:30, 17:30, 21:30 UTC = 9:30am, 1:30pm, 5:30pm ET
+    # 4H scan — three times during market hours Mon–Fri
+    # 13:30, 17:30, 21:30 UTC = 9:30am, 1:30pm, 5:30pm ET
     - cron: "30 13 * * 1-5"
     - cron: "30 17 * * 1-5"
     - cron: "30 21 * * 1-5"
+    # 1H scan — every hour during market hours Mon–Fri
+    # 14:30–20:30 UTC = 10:30am–4:30pm ET (on the half-hour after each bar closes)
+    - cron: "30 14 * * 1-5"
+    - cron: "30 15 * * 1-5"
+    - cron: "30 16 * * 1-5"
+    - cron: "30 18 * * 1-5"
+    - cron: "30 19 * * 1-5"
+    - cron: "30 20 * * 1-5"
 
 jobs:
   daily:
@@ -18,7 +26,7 @@ jobs:
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'schedule' &&
-       (github.event.schedule == '0 22 * * 1-5'))
+       github.event.schedule == '0 22 * * 1-5')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +41,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
 
-  intraday:
+  scan-4h:
     name: Intraday 4H scan
     if: >
       github.event_name == 'workflow_dispatch' ||
@@ -51,6 +59,31 @@ jobs:
         run: pip install -r scripts/requirements.txt
       - name: Run 4H scan
         run: python scripts/golden_zone_scan.py --supabase --timeframe 4h
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+
+  scan-1h:
+    name: Intraday 1H scan
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' &&
+       (github.event.schedule == '30 14 * * 1-5' ||
+        github.event.schedule == '30 15 * * 1-5' ||
+        github.event.schedule == '30 16 * * 1-5' ||
+        github.event.schedule == '30 18 * * 1-5' ||
+        github.event.schedule == '30 19 * * 1-5' ||
+        github.event.schedule == '30 20 * * 1-5'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+      - name: Run 1H scan
+        run: python scripts/golden_zone_scan.py --supabase --timeframe 1h
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

@@ -13,6 +13,7 @@ const TIMEFRAMES = [
   { label: "Both", value: "both" },
   { label: "1D",   value: "1d" },
   { label: "4H",   value: "4h" },
+  { label: "1H",   value: "1h" },
 ];
 
 export default function Sidebar() {

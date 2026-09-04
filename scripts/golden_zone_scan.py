@@ -110,8 +110,7 @@ def push_supabase(df: "pd.DataFrame", bars: dict, bars_keep: int = 180,
             continue
         tail = d.tail(bars_keep)
         for idx, r in tail.iterrows():
-            date_str = (idx.strftime("%Y-%m-%dT%H:%M")
-                        if timeframe != "1d" else str(idx.date()))
+            date_str = str(idx.date()) if timeframe == "1d" else idx.strftime("%Y-%m-%dT%H:%M")
             bar_rows.append({
                 "ticker": t,
                 "date": date_str,
@@ -191,13 +190,18 @@ def download(tickers: list[str], period: str, chunk: int = 100
     return out
 
 
-def download_4h(tickers: list[str], chunk: int = 50) -> dict[str, pd.DataFrame]:
-    """Download 1h bars (2y lookback) and resample to 4h OHLCV."""
+def download_intraday(tickers: list[str], resample_to: str | None = None,
+                      chunk: int = 50) -> dict[str, pd.DataFrame]:
+    """Download 1h bars (2y lookback), optionally resample to a wider bar size.
+
+    resample_to: None → raw 1h, '4h' → 4-hour bars aligned to market open.
+    """
     import yfinance as yf
+    label = resample_to or "1h"
     out: dict[str, pd.DataFrame] = {}
     for k in range(0, len(tickers), chunk):
         batch = tickers[k:k + chunk]
-        print(f"  4h bars {k + 1}-{k + len(batch)} of {len(tickers)}", file=sys.stderr)
+        print(f"  {label} bars {k + 1}-{k + len(batch)} of {len(tickers)}", file=sys.stderr)
         data = yf.download(batch, period="2y", interval="1h", auto_adjust=False,
                            group_by="ticker", progress=False, threads=True)
         for t in batch:
@@ -209,12 +213,13 @@ def download_4h(tickers: list[str], chunk: int = 50) -> dict[str, pd.DataFrame]:
             d.index = pd.to_datetime(d.index)
             if getattr(d.index, "tz", None) is not None:
                 d.index = d.index.tz_localize(None)
-            d4 = d.resample("4h", offset="30min").agg(
-                {"Open": "first", "High": "max", "Low": "min",
-                 "Close": "last", "Volume": "sum"}
-            ).dropna(subset=["Close"])
-            if len(d4) >= 260:
-                out[t] = d4
+            if resample_to:
+                d = d.resample(resample_to, offset="30min").agg(
+                    {"Open": "first", "High": "max", "Low": "min",
+                     "Close": "last", "Volume": "sum"}
+                ).dropna(subset=["Close"])
+            if len(d) >= 260:
+                out[t] = d
         time.sleep(0.5)
     return out
 
@@ -417,12 +422,12 @@ def main() -> int:
                         "pip install supabase)")
     p.add_argument("--bars-keep", type=int, default=180,
                    help="trailing daily bars to upsert per ticker, for charting")
-    p.add_argument("--timeframe", choices=["1d", "4h", "both"], default="1d",
-                   help="which timeframe(s) to scan and push")
+    p.add_argument("--timeframe", choices=["1d", "1h", "4h", "both"], default="1d",
+                   help="which timeframe(s) to scan and push; 'both' runs 1d+4h+1h")
     a = p.parse_args()
 
     anchors = ["fixed", "pine"] if a.anchor == "both" else [a.anchor]
-    timeframes = ["1d", "4h"] if a.timeframe == "both" else [a.timeframe]
+    timeframes = ["1d", "4h", "1h"] if a.timeframe == "both" else [a.timeframe]
 
     tickers = sp500_tickers()
     if a.limit:
@@ -435,8 +440,10 @@ def main() -> int:
 
         if tf == "1d":
             bars = download(tickers, a.period)
-        else:
-            bars = download_4h(tickers)
+        elif tf == "4h":
+            bars = download_intraday(tickers, resample_to="4h")
+        else:  # 1h
+            bars = download_intraday(tickers, resample_to=None)
 
         rows = []
         for t, d in bars.items():
