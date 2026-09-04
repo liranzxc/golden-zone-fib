@@ -27,6 +27,8 @@ export default function CandleChart({ bars, setup, height = 260 }: Props) {
     let disposed = false;
     let chart: IChartApi | null = null;
 
+    const sortedBars = [...bars].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
     import("lightweight-charts").then(({ createChart, ColorType }) => {
       if (disposed || !containerRef.current) return;
 
@@ -62,7 +64,7 @@ export default function CandleChart({ bars, setup, height = 260 }: Props) {
         priceLineVisible: false,
         crosshairMarkerVisible: false,
       });
-      zoneBand.setData(bars.map((b) => ({ time: b.date, value: setup.lvl_382 })));
+      zoneBand.setData(sortedBars.map((b) => ({ time: b.date, value: setup.lvl_382 })));
 
       const series: ISeriesApi<"Candlestick"> = chart.addCandlestickSeries({
         upColor: "#22c55e",
@@ -73,7 +75,7 @@ export default function CandleChart({ bars, setup, height = 260 }: Props) {
       });
 
       series.setData(
-        bars.map((b) => ({
+        sortedBars.map((b) => ({
           time: b.date,
           open: b.open,
           high: b.high,
@@ -111,15 +113,15 @@ export default function CandleChart({ bars, setup, height = 260 }: Props) {
       });
 
       // Swing point markers
-      const swingHighIdx = bars.length - 1 - setup.bars_off_high;
-      const swingHighBar = bars[swingHighIdx];
+      const swingHighIdx = sortedBars.length - 1 - setup.bars_off_high;
+      const swingHighBar = sortedBars[swingHighIdx];
 
       // Swing low: lowest bar after the swing high
       let swingLowIdx = swingHighIdx;
-      for (let i = swingHighIdx + 1; i < bars.length; i++) {
-        if (bars[i].low < bars[swingLowIdx].low) swingLowIdx = i;
+      for (let i = swingHighIdx + 1; i < sortedBars.length; i++) {
+        if (sortedBars[i].low < sortedBars[swingLowIdx].low) swingLowIdx = i;
       }
-      const swingLowBar = bars[swingLowIdx];
+      const swingLowBar = sortedBars[swingLowIdx];
 
       type Marker = {
         time: string;
@@ -153,7 +155,7 @@ export default function CandleChart({ bars, setup, height = 260 }: Props) {
       // Zoom to the setup leg: a few bars before the swing high through to the end
       chart.timeScale().setVisibleLogicalRange({
         from: Math.max(0, swingHighIdx - 10),
-        to: bars.length - 1 + 20,
+        to: sortedBars.length - 1 + 20,
       });
     });
 
