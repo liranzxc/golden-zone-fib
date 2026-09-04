@@ -14,7 +14,14 @@ export default function TickerCard({ setup, bars }: { setup: Setup; bars: Bar[] 
       <div className="mb-3 flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-lg font-semibold">{setup.ticker}</span>
+            <a
+              href={`https://www.tradingview.com/chart/?symbol=${setup.ticker}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-lg font-semibold hover:text-blue-400 transition-colors"
+            >
+              {setup.ticker}
+            </a>
             <span className="text-xs text-gray-500">{setup.anchor}</span>
             <span className="rounded bg-white/10 px-1.5 py-0.5 text-xs font-medium text-gray-300">
               {setup.timeframe.toUpperCase()}
