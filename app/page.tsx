@@ -26,9 +26,9 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   return (
     <div className="flex min-h-screen flex-col">
       <NavBar />
-      <div className="flex flex-1">
+      <div className="flex flex-1 flex-col md:flex-row">
         <Sidebar />
-        <main className="flex-1 p-6">
+        <main className="flex-1 p-4 md:p-6">
           <h1 className="mb-4 text-xl font-semibold">
             Golden-zone setups
             <span className="ml-2 text-sm font-normal text-gray-500">

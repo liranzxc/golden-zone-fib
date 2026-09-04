@@ -1,25 +1,27 @@
 "use client";
 
+import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 const ALIGN_OPTIONS = ["4/4", "3/4", "2/4"];
 const ZONE_PRESETS: { label: string; lo: number; hi: number }[] = [
-  { label: "All",        lo: 0,    hi: 100 },
-  { label: "38.2 – 50",  lo: 38.2, hi: 50 },
-  { label: "50 – 61.8",  lo: 50,   hi: 61.8 },
+  { label: "All",          lo: 0,    hi: 100  },
+  { label: "38.2 – 50",   lo: 38.2, hi: 50   },
+  { label: "50 – 61.8",   lo: 50,   hi: 61.8 },
   { label: "61.8 – 78.6", lo: 61.8, hi: 78.6 },
 ];
 const TIMEFRAMES = [
   { label: "Both", value: "both" },
-  { label: "1D",   value: "1d" },
-  { label: "4H",   value: "4h" },
-  { label: "1H",   value: "1h" },
+  { label: "1D",   value: "1d"   },
+  { label: "4H",   value: "4h"   },
+  { label: "1H",   value: "1h"   },
 ];
 
 export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
+  const [open, setOpen] = useState(false);
 
   const timeframe = params.get("timeframe") ?? "both";
   const align = params.getAll("align");
@@ -43,8 +45,8 @@ export default function Sidebar() {
     update({ align: next.length ? next : null });
   }
 
-  return (
-    <aside className="w-64 shrink-0 border-r border-border bg-panel px-4 py-6">
+  const filters = (
+    <>
       <div className="mb-6">
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
           Timeframe
@@ -113,6 +115,36 @@ export default function Sidebar() {
           ))}
         </div>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile: top bar with toggle */}
+      <div className="md:hidden border-b border-border bg-panel">
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="flex w-full items-center justify-between px-4 py-3 text-sm text-gray-300"
+        >
+          <span className="font-medium">Filters</span>
+          <svg
+            className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        {open && (
+          <div className="border-t border-border px-4 py-4">
+            {filters}
+          </div>
+        )}
+      </div>
+
+      {/* Desktop: fixed left sidebar */}
+      <aside className="hidden md:block w-64 shrink-0 border-r border-border bg-panel px-4 py-6">
+        {filters}
+      </aside>
+    </>
   );
 }

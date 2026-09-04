@@ -10,7 +10,7 @@ const LINKS = [
 export default function NavBar() {
   const pathname = usePathname();
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-border bg-panel/90 px-6 backdrop-blur">
+    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-border bg-panel/90 px-4 md:px-6 backdrop-blur">
       <div className="flex items-center gap-8">
         <span className="text-sm font-semibold tracking-wide text-white">
           Golden&nbsp;Zone
